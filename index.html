@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="GeoNotes PWA — Guarda notas geolocalizadas que funcionan sin conexión." />
+  <meta name="theme-color" content="#0f172a" />
+  <title>GeoNotes PWA</title>
+
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+          animation: {
+            'fade-in': 'fadeIn .4s ease-out',
+            'slide-down': 'slideDown .35s ease-out',
+            'pulse-slow': 'pulse 3s cubic-bezier(.4,0,.6,1) infinite',
+          },
+          keyframes: {
+            fadeIn: { '0%': { opacity: 0, transform: 'translateY(8px)' }, '100%': { opacity: 1, transform: 'translateY(0)' } },
+            slideDown: { '0%': { opacity: 0, transform: 'translateY(-100%)' }, '100%': { opacity: 1, transform: 'translateY(0)' } },
+          }
+        }
+      }
+    };
+  </script>
+
+  <!-- Google Fonts — Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <style>
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 999px;
+    }
+
+    .glass {
+      background: rgba(30, 41, 59, 0.55);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(148, 163, 184, 0.12);
+    }
+
+    .glow-border {
+      position: relative;
+    }
+
+    .glow-border::before {
+      content: '';
+      position: absolute;
+      inset: -1px;
+      border-radius: inherit;
+      padding: 1px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6, #a78bfa);
+      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      pointer-events: none;
+    }
+
+    .note-card {
+      transition: transform .2s ease, box-shadow .2s ease;
+    }
+
+    .note-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 30px rgba(99, 102, 241, 0.15);
+    }
+
+    /* Sync indicator pill */
+    .sync-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 9999px;
+    }
+
+    .sync-badge.synced {
+      background: rgba(16, 185, 129, .15);
+      color: #34d399;
+    }
+
+    .sync-badge.local {
+      background: rgba(251, 191, 36, .15);
+      color: #fbbf24;
+    }
+  </style>
+</head>
+
+<body class="min-h-screen bg-slate-950 font-sans text-slate-100 antialiased selection:bg-indigo-500/30">
+
+  <!-- ═══ Offline banner ═══════════════════════════════════════════════════ -->
+  <div id="offlineBanner"
+    class="fixed top-0 inset-x-0 z-50 flex items-center justify-center gap-2 bg-amber-500/90 backdrop-blur text-slate-900 text-sm font-semibold py-2 px-4 animate-slide-down hidden">
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 5.636a9 9 0 11-12.728 0M12 9v4m0 4h.01" />
+    </svg>
+    Sin conexión — Modo Offline
+  </div>
+
+  <!-- ═══ Header ═══════════════════════════════════════════════════════════ -->
+  <header class="sticky top-0 z-40 glass border-b border-slate-800/60">
+    <div class="mx-auto flex max-w-4xl items-center justify-between px-4 py-3 sm:px-6">
+      <div class="flex items-center gap-3">
+        <div
+          class="grid h-9 w-9 place-items-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 shadow-md shadow-indigo-500/25">
+          <svg class="h-5 w-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round"
+              d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0l-4.243-4.243a8 8 0 1111.314 0z" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold tracking-tight sm:text-xl">
+            Geo<span class="bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent">Notes</span>
+          </h1>
+          <p id="connectionStatus" class="text-[10px] font-medium text-emerald-400">● Conectado — Sincronizado con MySQL
+          </p>
+        </div>
+      </div>
+
+      <button id="btnNotifications" onclick="requestNotificationPermission()"
+        class="flex items-center gap-2 rounded-full bg-slate-800/70 px-4 py-2 text-xs font-medium text-slate-300 ring-1 ring-slate-700 transition hover:bg-slate-700 hover:text-white hover:ring-indigo-500/50 active:scale-95">
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round"
+            d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0a3 3 0 11-6 0" />
+        </svg>
+        <span id="notifLabel">Activar Notificaciones</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ═══ Main content ═════════════════════════════════════════════════════ -->
+  <main class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:py-12">
+
+    <!-- ── New note form ──────────────────────────────────────────────── -->
+    <section class="glass glow-border rounded-2xl p-5 sm:p-7 mb-10">
+      <h2 class="mb-4 text-base font-semibold text-slate-300">Nueva Nota</h2>
+
+      <textarea id="noteInput" rows="3" placeholder="Escribe tu nota aquí..."
+        class="w-full resize-none rounded-xl bg-slate-900/60 px-4 py-3 text-sm text-slate-100 placeholder-slate-500 ring-1 ring-slate-700 transition focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+
+      <div class="mt-4 flex items-center justify-between">
+        <p id="charCount" class="text-xs text-slate-500">0 caracteres</p>
+
+        <button id="btnSave" onclick="saveNote()"
+          class="group relative inline-flex items-center gap-2 overflow-hidden rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/25 transition-all hover:shadow-indigo-500/40 hover:brightness-110 active:scale-95 disabled:opacity-40 disabled:pointer-events-none">
+          <span
+            class="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/10 to-transparent transition-transform duration-700 group-hover:translate-x-full"></span>
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+          Guardar Nota
+        </button>
+      </div>
+    </section>
+
+    <!-- ── Notes header ───────────────────────────────────────────────── -->
+    <div class="mb-6 flex items-center justify-between">
+      <h2 class="text-base font-semibold text-slate-300">
+        Notas Guardadas
+        <span id="noteCount"
+          class="ml-2 inline-flex items-center rounded-full bg-indigo-500/15 px-2.5 py-0.5 text-xs font-medium text-indigo-400">0</span>
+      </h2>
+      <button id="btnClearAll" onclick="clearAllNotes()"
+        class="hidden rounded-lg px-3 py-1.5 text-xs font-medium text-red-400 ring-1 ring-red-500/30 transition hover:bg-red-500/10 active:scale-95">
+        Borrar Todas
+      </button>
+    </div>
+
+    <!-- ── Empty state ────────────────────────────────────────────────── -->
+    <div id="emptyState" class="flex flex-col items-center justify-center py-20 text-center">
+      <div class="mb-4 grid h-16 w-16 place-items-center rounded-2xl bg-slate-800/60 ring-1 ring-slate-700">
+        <svg class="h-8 w-8 text-slate-600" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round"
+            d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+        </svg>
+      </div>
+      <p class="text-sm text-slate-500">Aún no hay notas. ¡Crea la primera!</p>
+    </div>
+
+    <!-- ── Notes grid ──────────────────────────────────────────────────── -->
+    <div id="notesGrid" class="grid gap-4 sm:grid-cols-2"></div>
+  </main>
+
+  <!-- ═══ Footer ══════════════════════════════════════════════════════════ -->
+  <footer class="py-8 text-center text-xs text-slate-600">
+    GeoNotes PWA &copy; <span id="year"></span> — Datos sincronizados con MySQL &amp; localStorage.
+  </footer>
+
+  <!-- ═══ Toast container ═════════════════════════════════════════════════ -->
+  <div id="toastContainer" class="fixed bottom-6 right-6 z-50 flex flex-col gap-3"></div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- ═══ APPLICATION LOGIC ════════════════════════════════════════════ -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <script>
+    // ── Constants & DOM ───────────────────────────────────────────────
+    const API_URL = 'api.php';
+    const STORAGE_KEY = 'geonotes_data';
+    const PENDING_KEY = 'geonotes_pending'; // notes saved offline, waiting to sync
+
+    const noteInput = document.getElementById('noteInput');
+    const notesGrid = document.getElementById('notesGrid');
+    const emptyState = document.getElementById('emptyState');
+    const noteCount = document.getElementById('noteCount');
+    const charCount = document.getElementById('charCount');
+    const btnClearAll = document.getElementById('btnClearAll');
+    const btnSave = document.getElementById('btnSave');
+    const offlineBanner = document.getElementById('offlineBanner');
+    const connectionStatus = document.getElementById('connectionStatus');
+
+    document.getElementById('year').textContent = new Date().getFullYear();
+
+    // ══════════════════════════════════════════════════════════════════
+    //  1 . LOCAL STORAGE HELPERS
+    // ══════════════════════════════════════════════════════════════════
+    function getLocalNotes() {
+      try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
+      catch { return []; }
+    }
+    function setLocalNotes(notes) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
+    }
+    function getPending() {
+      try { return JSON.parse(localStorage.getItem(PENDING_KEY)) || []; }
+      catch { return []; }
+    }
+    function setPending(arr) {
+      localStorage.setItem(PENDING_KEY, JSON.stringify(arr));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  2 . API HELPERS  (online ↔ offline)
+    // ══════════════════════════════════════════════════════════════════
+    async function apiGet(action) {
+      const res = await fetch(`${API_URL}?action=${action}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    }
+
+    async function apiPost(action, body) {
+      const res = await fetch(`${API_URL}?action=${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    }
+
+    async function apiDelete(action, id) {
+      const url = id != null
+        ? `${API_URL}?action=${action}&id=${id}`
+        : `${API_URL}?action=${action}`;
+      const res = await fetch(url, { method: 'DELETE' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  3 . LOAD NOTES (API first → localStorage fallback)
+    // ══════════════════════════════════════════════════════════════════
+    async function loadNotes() {
+      if (navigator.onLine) {
+        try {
+          const notes = await apiGet('list');
+          setLocalNotes(notes); // mirror to localStorage for offline
+          renderNotes(notes);
+          return;
+        } catch (e) {
+          console.warn('[App] API unavailable, using localStorage:', e);
+        }
+      }
+      renderNotes(getLocalNotes());
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  4 . RENDER NOTES
+    // ══════════════════════════════════════════════════════════════════
+    function renderNotes(notes) {
+      notesGrid.innerHTML = '';
+      noteCount.textContent = notes.length;
+      emptyState.classList.toggle('hidden', notes.length > 0);
+      btnClearAll.classList.toggle('hidden', notes.length === 0);
+
+      notes.forEach((note) => {
+        const card = document.createElement('div');
+        card.className = 'note-card glass rounded-2xl p-5 animate-fade-in';
+
+        const date = new Date(note.timestamp);
+        const dateStr = date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+        const timeStr = date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+
+        const isSynced = note.id != null; // has DB id = synced
+        const syncBadge = isSynced
+          ? '<span class="sync-badge synced">✓ MySQL</span>'
+          : '<span class="sync-badge local">⏳ Local</span>';
+
+        card.innerHTML = `
+          <div class="mb-3 flex items-start justify-between gap-2">
+            <p class="text-sm leading-relaxed text-slate-200 whitespace-pre-wrap break-words">${escapeHTML(note.text)}</p>
+            <button onclick="deleteNote(${isSynced ? note.id : -1}, '${note.timestamp}')"
+                    class="shrink-0 rounded-lg p-1.5 text-slate-500 transition hover:bg-red-500/15 hover:text-red-400"
+                    aria-label="Eliminar nota">
+              <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+            </button>
+          </div>
+          <div class="flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
+            <span class="flex items-center gap-1">
+              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+              </svg>
+              ${dateStr} · ${timeStr}
+            </span>
+            ${note.lat != null ? `
+            <span class="flex items-center gap-1 text-indigo-400/80">
+              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0l-4.243-4.243a8 8 0 1111.314 0z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+              </svg>
+              ${note.lat.toFixed(4)}, ${note.lng.toFixed(4)}
+            </span>` : `
+            <span class="text-slate-600 italic">Sin ubicación</span>`}
+            ${syncBadge}
+          </div>
+        `;
+        notesGrid.appendChild(card);
+      });
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  5 . SAVE NOTE  (API when online, localStorage when offline)
+    // ══════════════════════════════════════════════════════════════════
+    function saveNote() {
+      const text = noteInput.value.trim();
+      if (!text) {
+        showToast('Escribe algo antes de guardar.', 'warn');
+        noteInput.focus();
+        return;
+      }
+
+      btnSave.disabled = true;
+      btnSave.innerHTML = `
+        <svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+        Guardando…`;
+
+      if ('geolocation' in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => commitNote(text, pos.coords.latitude, pos.coords.longitude),
+          () => commitNote(text, null, null),
+          { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+        );
+      } else {
+        commitNote(text, null, null);
+      }
+    }
+
+    async function commitNote(text, lat, lng) {
+      const noteData = { text, lat, lng };
+
+      if (navigator.onLine) {
+        try {
+          await apiPost('save', noteData);
+          showToast('¡Nota guardada en MySQL!', 'success');
+        } catch (e) {
+          // API failed — save locally
+          saveToLocalFallback(noteData);
+          showToast('Guardada localmente (sin conexión al servidor).', 'warn');
+        }
+      } else {
+        saveToLocalFallback(noteData);
+        showToast('Guardada localmente — se sincronizará al conectar.', 'warn');
+      }
+
+      noteInput.value = '';
+      charCount.textContent = '0 caracteres';
+      restoreSaveButton();
+      sendTestNotification(text);
+      await loadNotes();
+    }
+
+    function saveToLocalFallback(noteData) {
+      const notes = getLocalNotes();
+      const localNote = { ...noteData, timestamp: Date.now() }; // no id = not synced
+      notes.unshift(localNote);
+      setLocalNotes(notes);
+
+      // Also track as pending for sync later
+      const pending = getPending();
+      pending.push(localNote);
+      setPending(pending);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  6 . SYNC PENDING NOTES (when back online)
+    // ══════════════════════════════════════════════════════════════════
+    async function syncPendingNotes() {
+      const pending = getPending();
+      if (pending.length === 0) return;
+
+      let synced = 0;
+      for (const note of pending) {
+        try {
+          await apiPost('save', { text: note.text, lat: note.lat, lng: note.lng });
+          synced++;
+        } catch { break; } // stop on first failure
+      }
+
+      if (synced > 0) {
+        setPending(pending.slice(synced));
+        showToast(`${synced} nota(s) sincronizada(s) con MySQL.`, 'success');
+        await loadNotes();
+      }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  7 . DELETE / CLEAR
+    // ══════════════════════════════════════════════════════════════════
+    async function deleteNote(dbId, timestamp) {
+      if (navigator.onLine && dbId > 0) {
+        try {
+          await apiDelete('delete', dbId);
+        } catch (e) {
+          console.warn('[App] API delete failed:', e);
+        }
+      }
+      // Also remove from localStorage
+      const notes = getLocalNotes().filter(n => String(n.timestamp) !== String(timestamp));
+      setLocalNotes(notes);
+
+      showToast('Nota eliminada.', 'info');
+      await loadNotes();
+    }
+
+    async function clearAllNotes() {
+      if (!confirm('¿Eliminar todas las notas? Esta acción no se puede deshacer.')) return;
+
+      if (navigator.onLine) {
+        try { await apiDelete('clear'); } catch { }
+      }
+      setLocalNotes([]);
+      setPending([]);
+      showToast('Todas las notas han sido eliminadas.', 'info');
+      await loadNotes();
+    }
+
+    function restoreSaveButton() {
+      btnSave.disabled = false;
+      btnSave.innerHTML = `
+        <span class="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/10 to-transparent transition-transform duration-700 group-hover:translate-x-full"></span>
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+        </svg>
+        Guardar Nota`;
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  8 . NOTIFICATIONS
+    // ══════════════════════════════════════════════════════════════════
+    function requestNotificationPermission() {
+      if (!('Notification' in window)) {
+        showToast('Tu navegador no soporta notificaciones.', 'warn');
+        return;
+      }
+      Notification.requestPermission().then((perm) => {
+        if (perm === 'granted') {
+          showToast('¡Notificaciones activadas!', 'success');
+          updateNotifButton();
+          new Notification('GeoNotes PWA', { body: '🎉 Las notificaciones están activadas.', icon: 'icon-192.png' });
+        } else {
+          showToast('Permiso de notificaciones denegado.', 'warn');
+        }
+      });
+    }
+
+    function sendTestNotification(text) {
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('GeoNotes — Nueva Nota', {
+          body: text.length > 80 ? text.slice(0, 80) + '…' : text,
+          icon: 'icon-192.png'
+        });
+      }
+    }
+
+    function updateNotifButton() {
+      const label = document.getElementById('notifLabel');
+      if ('Notification' in window && Notification.permission === 'granted') {
+        label.textContent = 'Notificaciones Activas';
+      }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  9 . ONLINE / OFFLINE STATE
+    // ══════════════════════════════════════════════════════════════════
+    function updateOnlineStatus() {
+      const online = navigator.onLine;
+      offlineBanner.classList.toggle('hidden', online);
+
+      if (online) {
+        connectionStatus.innerHTML = '<span class="text-emerald-400">● Conectado — Sincronizado con MySQL</span>';
+        syncPendingNotes(); // auto-sync when back online
+      } else {
+        connectionStatus.innerHTML = '<span class="text-amber-400">● Sin conexión — Modo localStorage</span>';
+      }
+    }
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
+
+    // ══════════════════════════════════════════════════════════════════
+    //  10 . TOAST SYSTEM
+    // ══════════════════════════════════════════════════════════════════
+    function showToast(msg, type = 'info') {
+      const colors = {
+        success: 'bg-emerald-600/90 text-white',
+        warn: 'bg-amber-500/90 text-slate-900',
+        info: 'bg-slate-700/90 text-slate-100',
+      };
+      const icons = {
+        success: `<svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>`,
+        warn: `<svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`,
+        info: `<svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`,
+      };
+
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = `flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-medium shadow-lg backdrop-blur animate-fade-in ${colors[type] || colors.info}`;
+      toast.innerHTML = `${icons[type] || icons.info}<span>${msg}</span>`;
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(8px)';
+        toast.style.transition = 'all .3s ease';
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  11 . UTILITIES
+    // ══════════════════════════════════════════════════════════════════
+    function escapeHTML(str) {
+      const div = document.createElement('div');
+      div.appendChild(document.createTextNode(str));
+      return div.innerHTML;
+    }
+
+    noteInput.addEventListener('input', () => {
+      charCount.textContent = `${noteInput.value.length} caracteres`;
+    });
+
+    // ══════════════════════════════════════════════════════════════════
+    //  12 . SERVICE WORKER REGISTRATION
+    // ══════════════════════════════════════════════════════════════════
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js')
+          .then((reg) => console.log('[App] SW registered — scope:', reg.scope))
+          .catch((err) => console.warn('[App] SW registration failed:', err));
+      });
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  INIT
+    // ══════════════════════════════════════════════════════════════════
+    loadNotes();
+    updateOnlineStatus();
+    updateNotifButton();
+  </script>
+</body>
+
+</html>
