@@ -1,14 +1,18 @@
-// ─── GeoNotes PWA — Service Worker (Cache First) ─────────────────────────────
+// ─── GeoNotes PWA — Service Worker (Stale-While-Revalidate) ───────────────────────────
 
-const CACHE_NAME = 'geonotes-v2';
+const CACHE_NAME = 'geonotes-v8';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
+  './app.js',
   './icon-192.png',
   './icon-512.png',
   './manifest.json',
   'https://cdn.tailwindcss.com',
-  'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap'
+  'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap',
+  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
+  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+  'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js'
 ];
 
 // ─── Install: pre-cache the app shell ────────────────────────────────────────
@@ -36,7 +40,7 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// ─── Fetch: Cache First for assets, Network First for API ───────────────────
+// ─── Fetch: Stale-While-Revalidate for app files, skip cache for API ─────────────────
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
@@ -53,13 +57,10 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets → Cache First
+  // All other requests → Stale-While-Revalidate
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-      return fetch(event.request)
+      const fetchPromise = fetch(event.request)
         .then((networkResponse) => {
           if (
             networkResponse &&
@@ -67,17 +68,18 @@ self.addEventListener('fetch', (event) => {
             (networkResponse.type === 'basic' || networkResponse.type === 'cors')
           ) {
             const clone = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, clone);
-            });
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
           }
           return networkResponse;
         })
         .catch(() => {
-          if (event.request.mode === 'navigate') {
-            return caches.match('./index.html');
-          }
+          // Si falla la red silenciosamente
+          return cachedResponse || caches.match('./index.html');
         });
+
+      // Devuelve la cache inmediatamente si existe (para evitar el aviso de Chrome),
+      // de lo contrario, espera a la red.
+      return cachedResponse || fetchPromise;
     })
   );
 });

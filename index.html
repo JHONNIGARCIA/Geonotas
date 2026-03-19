@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" data-theme="dark">
 
 <head>
   <meta charset="UTF-8" />
@@ -7,22 +7,28 @@
   <meta name="description" content="GeoNotes PWA — Guarda notas geolocalizadas que funcionan sin conexión." />
   <meta name="theme-color" content="#0f172a" />
   <title>GeoNotes PWA</title>
-
-  <!-- PWA Manifest -->
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icon-192.png" />
-
-  <!-- Tailwind CSS via CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
+    // Emergency Cache Reset
+    if (window.location.search.includes('reset=1')) {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(r => r.forEach(reg => reg.unregister()));
+      }
+      caches.keys().then(k => k.forEach(key => caches.delete(key)));
+      localStorage.clear();
+      alert('Cache limpiada exitosamente. La página se recargará.');
+      window.location.href = window.location.pathname;
+    }
     tailwind.config = {
+      darkMode: 'class',
       theme: {
         extend: {
           fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
           animation: {
             'fade-in': 'fadeIn .4s ease-out',
             'slide-down': 'slideDown .35s ease-out',
-            'pulse-slow': 'pulse 3s cubic-bezier(.4,0,.6,1) infinite',
           },
           keyframes: {
             fadeIn: { '0%': { opacity: 0, transform: 'translateY(8px)' }, '100%': { opacity: 1, transform: 'translateY(0)' } },
@@ -32,35 +38,40 @@
       }
     };
   </script>
-
-  <!-- Google Fonts — Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
     ::-webkit-scrollbar {
-      width: 6px;
+      width: 6px
     }
 
     ::-webkit-scrollbar-track {
-      background: transparent;
+      background: transparent
     }
 
     ::-webkit-scrollbar-thumb {
       background: #334155;
-      border-radius: 999px;
+      border-radius: 999px
     }
 
     .glass {
-      background: rgba(30, 41, 59, 0.55);
+      background: rgba(30, 41, 59, .55);
       backdrop-filter: blur(14px);
       -webkit-backdrop-filter: blur(14px);
-      border: 1px solid rgba(148, 163, 184, 0.12);
+      border: 1px solid rgba(148, 163, 184, .12)
+    }
+
+    .light .glass {
+      background: rgba(255, 255, 255, .75);
+      border: 1px solid rgba(0, 0, 0, .08)
     }
 
     .glow-border {
-      position: relative;
+      position: relative
     }
 
     .glow-border::before {
@@ -74,43 +85,154 @@
       mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
       -webkit-mask-composite: xor;
       mask-composite: exclude;
-      pointer-events: none;
+      pointer-events: none
     }
 
     .note-card {
       transition: transform .2s ease, box-shadow .2s ease;
+      cursor: pointer
     }
 
     .note-card:hover {
       transform: translateY(-3px);
-      box-shadow: 0 8px 30px rgba(99, 102, 241, 0.15);
+      box-shadow: 0 8px 30px rgba(99, 102, 241, .15)
     }
 
-    /* Sync indicator pill */
     .sync-badge {
       display: inline-flex;
       align-items: center;
       gap: 4px;
       font-size: 10px;
       padding: 2px 8px;
-      border-radius: 9999px;
+      border-radius: 9999px
     }
 
     .sync-badge.synced {
       background: rgba(16, 185, 129, .15);
-      color: #34d399;
+      color: #34d399
     }
 
     .sync-badge.local {
       background: rgba(251, 191, 36, .15);
-      color: #fbbf24;
+      color: #fbbf24
+    }
+
+    .cat-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 6px
+    }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 60;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, .7);
+      backdrop-filter: blur(6px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .3s ease
+    }
+
+    .modal-overlay.active {
+      opacity: 1;
+      pointer-events: auto
+    }
+
+    .modal-content {
+      width: 90%;
+      max-width: 700px;
+      max-height: 85vh;
+      border-radius: 1.25rem;
+      overflow: hidden;
+      overflow-y: auto;
+      transform: translateY(20px) scale(.97);
+      transition: transform .3s ease
+    }
+
+    .modal-overlay.active .modal-content {
+      transform: translateY(0) scale(1)
+    }
+
+    #mapContainer {
+      height: 300px;
+      width: 100%
+    }
+
+    .light body,
+    .light {
+      background: #f8fafc !important;
+      color: #1e293b !important
+    }
+
+    .light .glass {
+      background: rgba(255, 255, 255, .8) !important;
+      border-color: rgba(0, 0, 0, .06) !important
+    }
+
+    .light .text-slate-100,
+    .light .text-slate-200,
+    .light .text-slate-300,
+    .light .text-white {
+      color: #1e293b !important
+    }
+
+    .light .text-slate-500,
+    .light .text-slate-600 {
+      color: #64748b !important
+    }
+
+    .light .bg-slate-950 {
+      background: #f8fafc !important
+    }
+
+    .light .bg-slate-900\/60,
+    .light .bg-slate-800\/60,
+    .light .bg-slate-800\/70 {
+      background: rgba(241, 245, 249, .9) !important
+    }
+
+    .light .ring-slate-700 {
+      --tw-ring-color: rgba(203, 213, 225, .5) !important
+    }
+
+    .light .border-slate-800\/60,
+    .light .border-slate-700\/50 {
+      border-color: rgba(203, 213, 225, .5) !important
+    }
+
+    .light .note-card:hover {
+      box-shadow: 0 8px 30px rgba(99, 102, 241, .1)
+    }
+
+    .light .placeholder-slate-500::placeholder {
+      color: #94a3b8 !important
+    }
+
+    .cat-pill {
+      font-size: 10px;
+      padding: 2px 10px;
+      border-radius: 9999px;
+      cursor: pointer;
+      transition: all .2s;
+      border: 1px solid transparent
+    }
+
+    .cat-pill.active {
+      border-color: currentColor;
+      font-weight: 600
     }
   </style>
 </head>
 
 <body class="min-h-screen bg-slate-950 font-sans text-slate-100 antialiased selection:bg-indigo-500/30">
 
-  <!-- ═══ Offline banner ═══════════════════════════════════════════════════ -->
+  <!-- Offline banner -->
   <div id="offlineBanner"
     class="fixed top-0 inset-x-0 z-50 flex items-center justify-center gap-2 bg-amber-500/90 backdrop-blur text-slate-900 text-sm font-semibold py-2 px-4 animate-slide-down hidden">
     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -119,9 +241,82 @@
     Sin conexión — Modo Offline
   </div>
 
-  <!-- ═══ Header ═══════════════════════════════════════════════════════════ -->
+  <!-- PWA Install banner (Chrome/Android) -->
+  <div id="installBanner"
+    class="fixed bottom-20 left-4 right-4 sm:left-auto sm:right-6 sm:w-80 z-50 glass rounded-2xl p-4 shadow-2xl animate-fade-in hidden">
+    <div class="flex items-center gap-3">
+      <div
+        class="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600">
+        <svg class="h-5 w-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round"
+            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+        </svg>
+      </div>
+      <div class="flex-1">
+        <p class="text-sm font-semibold">Instalar GeoNotes</p>
+        <p class="text-[11px] text-slate-400">Añadir a pantalla de inicio</p>
+      </div>
+      <button onclick="installPWA()"
+        class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500 active:scale-95">Instalar</button>
+      <button onclick="dismissInstall()" class="text-slate-500 hover:text-white p-1"><svg class="h-4 w-4" fill="none"
+          stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg></button>
+    </div>
+  </div>
+
+  <!-- PWA Install banner (iOS / fallback) -->
+  <div id="iosInstallBanner"
+    class="fixed bottom-20 left-4 right-4 sm:left-auto sm:right-6 sm:w-96 z-50 glass rounded-2xl p-5 shadow-2xl animate-fade-in hidden">
+    <div class="flex items-start gap-3">
+      <div
+        class="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600">
+        <svg class="h-5 w-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round"
+            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+        </svg>
+      </div>
+      <div class="flex-1">
+        <p class="text-sm font-semibold mb-2">Instalar GeoNotes</p>
+        <div id="iosSteps" class="space-y-2 text-[12px] text-slate-300">
+          <div class="flex items-center gap-2">
+            <span class="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-indigo-500/20 text-indigo-400 text-[10px] font-bold">1</span>
+            <span>Toca el botón <strong class="text-white">Compartir</strong>
+              <svg class="inline h-4 w-4 text-indigo-400 -mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+              </svg>
+            </span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-indigo-500/20 text-indigo-400 text-[10px] font-bold">2</span>
+            <span>Selecciona <strong class="text-white">"Agregar a pantalla de inicio"</strong></span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-indigo-500/20 text-indigo-400 text-[10px] font-bold">3</span>
+            <span>Toca <strong class="text-white">"Agregar"</strong> para confirmar</span>
+          </div>
+        </div>
+        <div id="genericSteps" class="space-y-2 text-[12px] text-slate-300 hidden">
+          <div class="flex items-center gap-2">
+            <span class="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-indigo-500/20 text-indigo-400 text-[10px] font-bold">1</span>
+            <span>Abre el <strong class="text-white">menú del navegador</strong> (⋮)</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-indigo-500/20 text-indigo-400 text-[10px] font-bold">2</span>
+            <span>Selecciona <strong class="text-white">"Instalar app"</strong> o <strong class="text-white">"Agregar a pantalla de inicio"</strong></span>
+          </div>
+        </div>
+      </div>
+      <button onclick="dismissIOSInstall()" class="text-slate-500 hover:text-white p-1 shrink-0"><svg class="h-4 w-4" fill="none"
+          stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg></button>
+    </div>
+  </div>
+
+  <!-- Header -->
   <header class="sticky top-0 z-40 glass border-b border-slate-800/60">
-    <div class="mx-auto flex max-w-4xl items-center justify-between px-4 py-3 sm:px-6">
+    <div class="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 sm:px-6">
       <div class="flex items-center gap-3">
         <div
           class="grid h-9 w-9 place-items-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 shadow-md shadow-indigo-500/25">
@@ -132,38 +327,93 @@
           </svg>
         </div>
         <div>
-          <h1 class="text-lg font-bold tracking-tight sm:text-xl">
-            Geo<span class="bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent">Notes</span>
-          </h1>
-          <p id="connectionStatus" class="text-[10px] font-medium text-emerald-400">● Conectado — Sincronizado con MySQL
-          </p>
+          <h1 class="text-lg font-bold tracking-tight sm:text-xl">Geo<span
+              class="bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent">Notes</span></h1>
+          <p id="connectionStatus" class="text-[10px] font-medium text-emerald-400">● Conectado</p>
         </div>
       </div>
-
-      <button id="btnNotifications" onclick="requestNotificationPermission()"
-        class="flex items-center gap-2 rounded-full bg-slate-800/70 px-4 py-2 text-xs font-medium text-slate-300 ring-1 ring-slate-700 transition hover:bg-slate-700 hover:text-white hover:ring-indigo-500/50 active:scale-95">
-        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round"
-            d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0a3 3 0 11-6 0" />
-        </svg>
-        <span id="notifLabel">Activar Notificaciones</span>
-      </button>
+      <div class="flex items-center gap-2">
+        <!-- Download/Install button -->
+        <button id="btnDownload" onclick="triggerInstall()"
+          class="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-indigo-600 to-violet-600 px-3 py-2 text-xs font-semibold text-white shadow-lg shadow-indigo-500/25 transition hover:shadow-indigo-500/40 hover:brightness-110 active:scale-95"
+          title="Descargar App">
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round"
+              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          <span class="hidden sm:inline">Descargar</span>
+        </button>
+        <!-- Theme toggle -->
+        <button id="btnTheme" onclick="toggleTheme()"
+          class="rounded-full bg-slate-800/70 p-2 text-slate-300 ring-1 ring-slate-700 transition hover:bg-slate-700 hover:text-white active:scale-95"
+          title="Cambiar tema">
+          <svg id="themeIcon" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round"
+              d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+          </svg>
+        </button>
+        <!-- Notifications -->
+        <button id="btnNotifications" onclick="requestNotificationPermission()"
+          class="flex items-center gap-2 rounded-full bg-slate-800/70 px-3 py-2 text-xs font-medium text-slate-300 ring-1 ring-slate-700 transition hover:bg-slate-700 hover:text-white active:scale-95">
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round"
+              d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0a3 3 0 11-6 0" />
+          </svg>
+          <span id="notifLabel" class="hidden sm:inline">Notificaciones</span>
+        </button>
+      </div>
     </div>
   </header>
 
-  <!-- ═══ Main content ═════════════════════════════════════════════════════ -->
-  <main class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:py-12">
+  <main class="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:py-10">
 
-    <!-- ── New note form ──────────────────────────────────────────────── -->
-    <section class="glass glow-border rounded-2xl p-5 sm:p-7 mb-10">
+    <!-- New note form -->
+    <section class="glass glow-border rounded-2xl p-5 sm:p-7 mb-8">
       <h2 class="mb-4 text-base font-semibold text-slate-300">Nueva Nota</h2>
-
+      <!-- Name field (required) -->
+      <div class="mb-3">
+        <label for="nameInput" class="block text-[11px] text-slate-500 mb-1">Nombre <span class="text-red-400">*</span></label>
+        <input id="nameInput" type="text" placeholder="Tu nombre..." maxlength="50"
+          class="w-full rounded-xl bg-slate-900/60 px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 ring-1 ring-slate-700 transition focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+      </div>
       <textarea id="noteInput" rows="3" placeholder="Escribe tu nota aquí..."
         class="w-full resize-none rounded-xl bg-slate-900/60 px-4 py-3 text-sm text-slate-100 placeholder-slate-500 ring-1 ring-slate-700 transition focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
 
+      <!-- Category selector -->
+      <div class="mt-3 flex flex-wrap items-center gap-2">
+        <span class="text-[11px] text-slate-500 mr-1">Categoría:</span>
+        <button type="button" onclick="selectCat('general')" class="cat-pill active"
+          style="background:rgba(99,102,241,.15);color:#818cf8" data-cat="general">📌 General</button>
+        <button type="button" onclick="selectCat('trabajo')" class="cat-pill"
+          style="background:rgba(16,185,129,.15);color:#34d399" data-cat="trabajo">💼 Trabajo</button>
+        <button type="button" onclick="selectCat('personal')" class="cat-pill"
+          style="background:rgba(244,114,182,.15);color:#f472b6" data-cat="personal">💜 Personal</button>
+        <button type="button" onclick="selectCat('escuela')" class="cat-pill"
+          style="background:rgba(251,191,36,.15);color:#fbbf24" data-cat="escuela">📚 Escuela</button>
+        <button type="button" onclick="selectCat('idea')" class="cat-pill"
+          style="background:rgba(139,92,246,.15);color:#a78bfa" data-cat="idea">💡 Idea</button>
+      </div>
+
+      <!-- Photo capture -->
+      <div class="mt-3 flex items-center gap-3">
+        <label
+          class="flex items-center gap-2 rounded-lg bg-slate-800/50 px-3 py-2 text-xs text-slate-400 ring-1 ring-slate-700 cursor-pointer hover:bg-slate-700 hover:text-white transition">
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round"
+              d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          📷 Foto
+          <input type="file" id="photoInput" accept="image/*" capture="environment" class="hidden"
+            onchange="handlePhoto(this)" />
+        </label>
+        <img id="photoPreview" class="hidden h-10 w-10 rounded-lg object-cover ring-1 ring-slate-600" />
+        <button id="removePhoto" class="hidden text-xs text-red-400 hover:text-red-300" onclick="removePhoto()">✕
+          Quitar</button>
+      </div>
+
       <div class="mt-4 flex items-center justify-between">
         <p id="charCount" class="text-xs text-slate-500">0 caracteres</p>
-
         <button id="btnSave" onclick="saveNote()"
           class="group relative inline-flex items-center gap-2 overflow-hidden rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/25 transition-all hover:shadow-indigo-500/40 hover:brightness-110 active:scale-95 disabled:opacity-40 disabled:pointer-events-none">
           <span
@@ -176,21 +426,55 @@
       </div>
     </section>
 
-    <!-- ── Notes header ───────────────────────────────────────────────── -->
-    <div class="mb-6 flex items-center justify-between">
-      <h2 class="text-base font-semibold text-slate-300">
-        Notas Guardadas
-        <span id="noteCount"
-          class="ml-2 inline-flex items-center rounded-full bg-indigo-500/15 px-2.5 py-0.5 text-xs font-medium text-indigo-400">0</span>
-      </h2>
-      <button id="btnClearAll" onclick="clearAllNotes()"
-        class="hidden rounded-lg px-3 py-1.5 text-xs font-medium text-red-400 ring-1 ring-red-500/30 transition hover:bg-red-500/10 active:scale-95">
-        Borrar Todas
-      </button>
+    <!-- Stats chart -->
+    <section class="glass rounded-2xl p-5 mb-8">
+      <h2 class="text-sm font-semibold text-slate-300 mb-3">📊 Actividad (últimos 7 días)</h2>
+      <div style="height:150px"><canvas id="statsChart"></canvas></div>
+    </section>
+
+    <!-- Search + filters -->
+    <div class="mb-4 flex flex-col sm:flex-row gap-3">
+      <div class="relative flex-1">
+        <svg class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" fill="none" stroke="currentColor"
+          stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+        <input id="searchInput" type="text" placeholder="Buscar notas..." oninput="filterNotes()"
+          class="w-full rounded-xl bg-slate-900/60 pl-10 pr-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 ring-1 ring-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+      </div>
+      <div class="flex items-center gap-2 overflow-x-auto">
+        <button onclick="filterByCat('all')" class="cat-pill active" data-filter="all"
+          style="background:rgba(148,163,184,.15);color:#94a3b8">Todas</button>
+        <button onclick="filterByCat('general')" class="cat-pill" data-filter="general"
+          style="background:rgba(99,102,241,.15);color:#818cf8">📌</button>
+        <button onclick="filterByCat('trabajo')" class="cat-pill" data-filter="trabajo"
+          style="background:rgba(16,185,129,.15);color:#34d399">💼</button>
+        <button onclick="filterByCat('personal')" class="cat-pill" data-filter="personal"
+          style="background:rgba(244,114,182,.15);color:#f472b6">💜</button>
+        <button onclick="filterByCat('escuela')" class="cat-pill" data-filter="escuela"
+          style="background:rgba(251,191,36,.15);color:#fbbf24">📚</button>
+        <button onclick="filterByCat('idea')" class="cat-pill" data-filter="idea"
+          style="background:rgba(139,92,246,.15);color:#a78bfa">💡</button>
+      </div>
     </div>
 
-    <!-- ── Empty state ────────────────────────────────────────────────── -->
-    <div id="emptyState" class="flex flex-col items-center justify-center py-20 text-center">
+    <!-- Notes header -->
+    <div class="mb-4 flex items-center justify-between">
+      <h2 class="text-base font-semibold text-slate-300">Notas Guardadas <span id="noteCount"
+          class="ml-2 inline-flex items-center rounded-full bg-indigo-500/15 px-2.5 py-0.5 text-xs font-medium text-indigo-400">0</span>
+      </h2>
+      <div class="flex gap-2">
+        <button id="btnExport" onclick="exportCSV()"
+          class="hidden rounded-lg px-3 py-1.5 text-xs font-medium text-indigo-400 ring-1 ring-indigo-500/30 transition hover:bg-indigo-500/10 active:scale-95">📥
+          Exportar CSV</button>
+        <button id="btnClearAll" onclick="clearAllNotes()"
+          class="hidden rounded-lg px-3 py-1.5 text-xs font-medium text-red-400 ring-1 ring-red-500/30 transition hover:bg-red-500/10 active:scale-95">Borrar
+          Todas</button>
+      </div>
+    </div>
+
+    <!-- Empty state -->
+    <div id="emptyState" class="flex flex-col items-center justify-center py-16 text-center">
       <div class="mb-4 grid h-16 w-16 place-items-center rounded-2xl bg-slate-800/60 ring-1 ring-slate-700">
         <svg class="h-8 w-8 text-slate-600" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round"
@@ -200,399 +484,64 @@
       <p class="text-sm text-slate-500">Aún no hay notas. ¡Crea la primera!</p>
     </div>
 
-    <!-- ── Notes grid ──────────────────────────────────────────────────── -->
-    <div id="notesGrid" class="grid gap-4 sm:grid-cols-2"></div>
+    <!-- Notes grid -->
+    <div id="notesGrid" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"></div>
   </main>
 
-  <!-- ═══ Footer ══════════════════════════════════════════════════════════ -->
-  <footer class="py-8 text-center text-xs text-slate-600">
-    GeoNotes PWA &copy; <span id="year"></span> — Datos sincronizados con MySQL &amp; localStorage.
-  </footer>
+  <footer class="py-6 text-center text-xs text-slate-600">GeoNotes PWA &copy; <span id="year"></span> — Datos
+    sincronizados con MySQL &amp; localStorage.</footer>
 
-  <!-- ═══ Toast container ═════════════════════════════════════════════════ -->
+  <!-- Map Modal -->
+  <div id="mapModal" class="modal-overlay" onclick="closeMapModal(event)">
+    <div class="modal-content glass">
+      <div class="flex items-center justify-between px-5 py-4 border-b border-slate-700/50">
+        <div>
+          <h3 class="text-sm font-semibold text-white" id="modalTitle">Ubicación</h3>
+          <p class="text-[11px] text-indigo-400 mt-0.5" id="modalCoords"></p>
+        </div>
+        <button onclick="closeMapModal()"
+          class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-700 hover:text-white transition"><svg class="h-5 w-5"
+            fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg></button>
+      </div>
+      <div id="mapContainer"></div>
+      <div class="px-5 py-4">
+        <img id="modalPhoto" class="hidden mb-3 rounded-xl max-h-48 object-cover" />
+        <p id="modalNoteText" class="text-sm text-slate-300 whitespace-pre-wrap break-words"></p>
+        <p id="modalNoteDate" class="text-[11px] text-slate-500 mt-2"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Modal -->
+  <div id="editModal" class="modal-overlay" onclick="closeEditModal(event)">
+    <div class="modal-content glass" style="max-width:500px">
+      <div class="flex items-center justify-between px-5 py-4 border-b border-slate-700/50">
+        <h3 class="text-sm font-semibold text-white">✏️ Editar Nota</h3>
+        <button onclick="closeEditModal()"
+          class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-700 hover:text-white transition"><svg class="h-5 w-5"
+            fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg></button>
+      </div>
+      <div class="p-5">
+        <textarea id="editTextarea" rows="4"
+          class="w-full resize-none rounded-xl bg-slate-900/60 px-4 py-3 text-sm text-slate-100 ring-1 ring-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+        <div class="mt-4 flex justify-end gap-2">
+          <button onclick="closeEditModal()"
+            class="rounded-lg px-4 py-2 text-xs text-slate-400 ring-1 ring-slate-700 hover:bg-slate-700">Cancelar</button>
+          <button onclick="submitEdit()"
+            class="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500 active:scale-95">Guardar
+            Cambios</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="toastContainer" class="fixed bottom-6 right-6 z-50 flex flex-col gap-3"></div>
 
-  <!-- ═══════════════════════════════════════════════════════════════════ -->
-  <!-- ═══ APPLICATION LOGIC ════════════════════════════════════════════ -->
-  <!-- ═══════════════════════════════════════════════════════════════════ -->
-  <script>
-    // ── Constants & DOM ───────────────────────────────────────────────
-    const API_URL = 'api.php';
-    const STORAGE_KEY = 'geonotes_data';
-    const PENDING_KEY = 'geonotes_pending'; // notes saved offline, waiting to sync
-
-    const noteInput = document.getElementById('noteInput');
-    const notesGrid = document.getElementById('notesGrid');
-    const emptyState = document.getElementById('emptyState');
-    const noteCount = document.getElementById('noteCount');
-    const charCount = document.getElementById('charCount');
-    const btnClearAll = document.getElementById('btnClearAll');
-    const btnSave = document.getElementById('btnSave');
-    const offlineBanner = document.getElementById('offlineBanner');
-    const connectionStatus = document.getElementById('connectionStatus');
-
-    document.getElementById('year').textContent = new Date().getFullYear();
-
-    // ══════════════════════════════════════════════════════════════════
-    //  1 . LOCAL STORAGE HELPERS
-    // ══════════════════════════════════════════════════════════════════
-    function getLocalNotes() {
-      try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
-      catch { return []; }
-    }
-    function setLocalNotes(notes) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
-    }
-    function getPending() {
-      try { return JSON.parse(localStorage.getItem(PENDING_KEY)) || []; }
-      catch { return []; }
-    }
-    function setPending(arr) {
-      localStorage.setItem(PENDING_KEY, JSON.stringify(arr));
-    }
-
-    // ══════════════════════════════════════════════════════════════════
-    //  2 . API HELPERS  (online ↔ offline)
-    // ══════════════════════════════════════════════════════════════════
-    async function apiGet(action) {
-      const res = await fetch(`${API_URL}?action=${action}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.json();
-    }
-
-    async function apiPost(action, body) {
-      const res = await fetch(`${API_URL}?action=${action}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.json();
-    }
-
-    async function apiDelete(action, id) {
-      const url = id != null
-        ? `${API_URL}?action=${action}&id=${id}`
-        : `${API_URL}?action=${action}`;
-      const res = await fetch(url, { method: 'DELETE' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.json();
-    }
-
-    // ══════════════════════════════════════════════════════════════════
-    //  3 . LOAD NOTES (API first → localStorage fallback)
-    // ══════════════════════════════════════════════════════════════════
-    async function loadNotes() {
-      if (navigator.onLine) {
-        try {
-          const notes = await apiGet('list');
-          setLocalNotes(notes); // mirror to localStorage for offline
-          renderNotes(notes);
-          return;
-        } catch (e) {
-          console.warn('[App] API unavailable, using localStorage:', e);
-        }
-      }
-      renderNotes(getLocalNotes());
-    }
-
-    // ══════════════════════════════════════════════════════════════════
-    //  4 . RENDER NOTES
-    // ══════════════════════════════════════════════════════════════════
-    function renderNotes(notes) {
-      notesGrid.innerHTML = '';
-      noteCount.textContent = notes.length;
-      emptyState.classList.toggle('hidden', notes.length > 0);
-      btnClearAll.classList.toggle('hidden', notes.length === 0);
-
-      notes.forEach((note) => {
-        const card = document.createElement('div');
-        card.className = 'note-card glass rounded-2xl p-5 animate-fade-in';
-
-        const date = new Date(note.timestamp);
-        const dateStr = date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
-        const timeStr = date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-
-        const isSynced = note.id != null; // has DB id = synced
-        const syncBadge = isSynced
-          ? '<span class="sync-badge synced">✓ MySQL</span>'
-          : '<span class="sync-badge local">⏳ Local</span>';
-
-        card.innerHTML = `
-          <div class="mb-3 flex items-start justify-between gap-2">
-            <p class="text-sm leading-relaxed text-slate-200 whitespace-pre-wrap break-words">${escapeHTML(note.text)}</p>
-            <button onclick="deleteNote(${isSynced ? note.id : -1}, '${note.timestamp}')"
-                    class="shrink-0 rounded-lg p-1.5 text-slate-500 transition hover:bg-red-500/15 hover:text-red-400"
-                    aria-label="Eliminar nota">
-              <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-              </svg>
-            </button>
-          </div>
-          <div class="flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
-            <span class="flex items-center gap-1">
-              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-              </svg>
-              ${dateStr} · ${timeStr}
-            </span>
-            ${note.lat != null ? `
-            <span class="flex items-center gap-1 text-indigo-400/80">
-              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0l-4.243-4.243a8 8 0 1111.314 0z"/>
-                <path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
-              </svg>
-              ${note.lat.toFixed(4)}, ${note.lng.toFixed(4)}
-            </span>` : `
-            <span class="text-slate-600 italic">Sin ubicación</span>`}
-            ${syncBadge}
-          </div>
-        `;
-        notesGrid.appendChild(card);
-      });
-    }
-
-    // ══════════════════════════════════════════════════════════════════
-    //  5 . SAVE NOTE  (API when online, localStorage when offline)
-    // ══════════════════════════════════════════════════════════════════
-    function saveNote() {
-      const text = noteInput.value.trim();
-      if (!text) {
-        showToast('Escribe algo antes de guardar.', 'warn');
-        noteInput.focus();
-        return;
-      }
-
-      btnSave.disabled = true;
-      btnSave.innerHTML = `
-        <svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-        </svg>
-        Guardando…`;
-
-      if ('geolocation' in navigator) {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => commitNote(text, pos.coords.latitude, pos.coords.longitude),
-          () => commitNote(text, null, null),
-          { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
-        );
-      } else {
-        commitNote(text, null, null);
-      }
-    }
-
-    async function commitNote(text, lat, lng) {
-      const noteData = { text, lat, lng };
-
-      if (navigator.onLine) {
-        try {
-          await apiPost('save', noteData);
-          showToast('¡Nota guardada en MySQL!', 'success');
-        } catch (e) {
-          // API failed — save locally
-          saveToLocalFallback(noteData);
-          showToast('Guardada localmente (sin conexión al servidor).', 'warn');
-        }
-      } else {
-        saveToLocalFallback(noteData);
-        showToast('Guardada localmente — se sincronizará al conectar.', 'warn');
-      }
-
-      noteInput.value = '';
-      charCount.textContent = '0 caracteres';
-      restoreSaveButton();
-      sendTestNotification(text);
-      await loadNotes();
-    }
-
-    function saveToLocalFallback(noteData) {
-      const notes = getLocalNotes();
-      const localNote = { ...noteData, timestamp: Date.now() }; // no id = not synced
-      notes.unshift(localNote);
-      setLocalNotes(notes);
-
-      // Also track as pending for sync later
-      const pending = getPending();
-      pending.push(localNote);
-      setPending(pending);
-    }
-
-    // ══════════════════════════════════════════════════════════════════
-    //  6 . SYNC PENDING NOTES (when back online)
-    // ══════════════════════════════════════════════════════════════════
-    async function syncPendingNotes() {
-      const pending = getPending();
-      if (pending.length === 0) return;
-
-      let synced = 0;
-      for (const note of pending) {
-        try {
-          await apiPost('save', { text: note.text, lat: note.lat, lng: note.lng });
-          synced++;
-        } catch { break; } // stop on first failure
-      }
-
-      if (synced > 0) {
-        setPending(pending.slice(synced));
-        showToast(`${synced} nota(s) sincronizada(s) con MySQL.`, 'success');
-        await loadNotes();
-      }
-    }
-
-    // ══════════════════════════════════════════════════════════════════
-    //  7 . DELETE / CLEAR
-    // ══════════════════════════════════════════════════════════════════
-    async function deleteNote(dbId, timestamp) {
-      if (navigator.onLine && dbId > 0) {
-        try {
-          await apiDelete('delete', dbId);
-        } catch (e) {
-          console.warn('[App] API delete failed:', e);
-        }
-      }
-      // Also remove from localStorage
-      const notes = getLocalNotes().filter(n => String(n.timestamp) !== String(timestamp));
-      setLocalNotes(notes);
-
-      showToast('Nota eliminada.', 'info');
-      await loadNotes();
-    }
-
-    async function clearAllNotes() {
-      if (!confirm('¿Eliminar todas las notas? Esta acción no se puede deshacer.')) return;
-
-      if (navigator.onLine) {
-        try { await apiDelete('clear'); } catch { }
-      }
-      setLocalNotes([]);
-      setPending([]);
-      showToast('Todas las notas han sido eliminadas.', 'info');
-      await loadNotes();
-    }
-
-    function restoreSaveButton() {
-      btnSave.disabled = false;
-      btnSave.innerHTML = `
-        <span class="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/10 to-transparent transition-transform duration-700 group-hover:translate-x-full"></span>
-        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
-        </svg>
-        Guardar Nota`;
-    }
-
-    // ══════════════════════════════════════════════════════════════════
-    //  8 . NOTIFICATIONS
-    // ══════════════════════════════════════════════════════════════════
-    function requestNotificationPermission() {
-      if (!('Notification' in window)) {
-        showToast('Tu navegador no soporta notificaciones.', 'warn');
-        return;
-      }
-      Notification.requestPermission().then((perm) => {
-        if (perm === 'granted') {
-          showToast('¡Notificaciones activadas!', 'success');
-          updateNotifButton();
-          new Notification('GeoNotes PWA', { body: '🎉 Las notificaciones están activadas.', icon: 'icon-192.png' });
-        } else {
-          showToast('Permiso de notificaciones denegado.', 'warn');
-        }
-      });
-    }
-
-    function sendTestNotification(text) {
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('GeoNotes — Nueva Nota', {
-          body: text.length > 80 ? text.slice(0, 80) + '…' : text,
-          icon: 'icon-192.png'
-        });
-      }
-    }
-
-    function updateNotifButton() {
-      const label = document.getElementById('notifLabel');
-      if ('Notification' in window && Notification.permission === 'granted') {
-        label.textContent = 'Notificaciones Activas';
-      }
-    }
-
-    // ══════════════════════════════════════════════════════════════════
-    //  9 . ONLINE / OFFLINE STATE
-    // ══════════════════════════════════════════════════════════════════
-    function updateOnlineStatus() {
-      const online = navigator.onLine;
-      offlineBanner.classList.toggle('hidden', online);
-
-      if (online) {
-        connectionStatus.innerHTML = '<span class="text-emerald-400">● Conectado — Sincronizado con MySQL</span>';
-        syncPendingNotes(); // auto-sync when back online
-      } else {
-        connectionStatus.innerHTML = '<span class="text-amber-400">● Sin conexión — Modo localStorage</span>';
-      }
-    }
-    window.addEventListener('online', updateOnlineStatus);
-    window.addEventListener('offline', updateOnlineStatus);
-
-    // ══════════════════════════════════════════════════════════════════
-    //  10 . TOAST SYSTEM
-    // ══════════════════════════════════════════════════════════════════
-    function showToast(msg, type = 'info') {
-      const colors = {
-        success: 'bg-emerald-600/90 text-white',
-        warn: 'bg-amber-500/90 text-slate-900',
-        info: 'bg-slate-700/90 text-slate-100',
-      };
-      const icons = {
-        success: `<svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>`,
-        warn: `<svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`,
-        info: `<svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`,
-      };
-
-      const container = document.getElementById('toastContainer');
-      const toast = document.createElement('div');
-      toast.className = `flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-medium shadow-lg backdrop-blur animate-fade-in ${colors[type] || colors.info}`;
-      toast.innerHTML = `${icons[type] || icons.info}<span>${msg}</span>`;
-      container.appendChild(toast);
-
-      setTimeout(() => {
-        toast.style.opacity = '0';
-        toast.style.transform = 'translateY(8px)';
-        toast.style.transition = 'all .3s ease';
-        setTimeout(() => toast.remove(), 300);
-      }, 3000);
-    }
-
-    // ══════════════════════════════════════════════════════════════════
-    //  11 . UTILITIES
-    // ══════════════════════════════════════════════════════════════════
-    function escapeHTML(str) {
-      const div = document.createElement('div');
-      div.appendChild(document.createTextNode(str));
-      return div.innerHTML;
-    }
-
-    noteInput.addEventListener('input', () => {
-      charCount.textContent = `${noteInput.value.length} caracteres`;
-    });
-
-    // ══════════════════════════════════════════════════════════════════
-    //  12 . SERVICE WORKER REGISTRATION
-    // ══════════════════════════════════════════════════════════════════
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js')
-          .then((reg) => console.log('[App] SW registered — scope:', reg.scope))
-          .catch((err) => console.warn('[App] SW registration failed:', err));
-      });
-    }
-
-    // ══════════════════════════════════════════════════════════════════
-    //  INIT
-    // ══════════════════════════════════════════════════════════════════
-    loadNotes();
-    updateOnlineStatus();
-    updateNotifButton();
-  </script>
+  <script src="app.js"></script>
 </body>
 
 </html>
