@@ -12,17 +12,24 @@ export default async function handler(req, res) {
     return;
   }
 
-  // TiDB Cloud / MySQL Connection
   const host = process.env.DB_HOST ? process.env.DB_HOST.trim() : 'localhost';
   const user = process.env.DB_USER ? process.env.DB_USER.trim() : 'root';
   const pass = process.env.DB_PASS ? process.env.DB_PASS.trim() : '';
   const name = process.env.DB_NAME ? process.env.DB_NAME.trim() : 'geonotes_db';
-  const port = process.env.DB_PORT ? process.env.DB_PORT.trim() : '4000';
+  const port = parseInt(process.env.DB_PORT ? process.env.DB_PORT.trim() : '4000', 10);
   
-  const encodedUser = encodeURIComponent(user);
-  const encodedPass = encodeURIComponent(pass);
-
-  const dbConfig = `mysql://${encodedUser}:${encodedPass}@${host}:${port}/${name}?ssl={"rejectUnauthorized":true}`;
+  const dbConfig = {
+    host,
+    user,
+    password: pass,
+    database: name,
+    port,
+    ssl: {
+      minVersion: 'TLSv1.2',
+      rejectUnauthorized: true,
+      servername: host // CLAVE PARA RESOLVER EL ERROR DE TiDB SERVERLESS 1105 (SNI)
+    }
+  };
 
   
   let connection;
