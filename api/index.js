@@ -24,7 +24,7 @@ export default async function handler(req, res) {
     password: pass,
     database: name,
     port,
-    ssl: { rejectUnauthorized: true }
+    ssl: { rejectUnauthorized: false }
   };
 
   let connection;
