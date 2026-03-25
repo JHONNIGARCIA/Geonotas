@@ -82,7 +82,7 @@ export default async function handler(req, res) {
         }
       }
 
-      await connection.execute(
+      const [insertResult] = await connection.execute(
         'INSERT INTO notas (lat, lng, type, text, image, visibilidad, share_code) VALUES (?, ?, ?, ?, ?, ?, ?)',
         [
           lat != null ? lat : 0, 
@@ -95,11 +95,23 @@ export default async function handler(req, res) {
         ]
       );
 
+      const [newRows] = await connection.execute('SELECT * FROM notas WHERE id = ?', [insertResult.insertId]);
+      if (newRows.length > 0) {
+        const newNote = newRows[0];
+        const formattedNote = { 
+          ...newNote, 
+          timestamp: newNote.created_at, 
+          lat: parseFloat(newNote.lat), 
+          lng: parseFloat(newNote.lng) 
+        };
+        return sendSuccess({ status: 'ok', ...formattedNote });
+      }
+
       return sendSuccess({ status: 'ok', share_code: shareCode });
 
     } else if (action === 'list') {
       const [rows] = await connection.execute("SELECT * FROM notas WHERE visibilidad = 'publico' ORDER BY created_at DESC");
-      const data = rows.map(r => ({ ...r, lat: parseFloat(r.lat), lng: parseFloat(r.lng) }));
+      const data = rows.map(r => ({ ...r, timestamp: r.created_at, lat: parseFloat(r.lat), lng: parseFloat(r.lng) }));
       return sendSuccess(data);
 
     } else if (action === 'stats') {
@@ -119,7 +131,7 @@ export default async function handler(req, res) {
       }
       const [rows] = await connection.execute('SELECT * FROM notas WHERE share_code = ? LIMIT 1', [code]);
       if (rows.length > 0) {
-        const data = rows.map(r => ({ ...r, lat: parseFloat(r.lat), lng: parseFloat(r.lng) }));
+        const data = rows.map(r => ({ ...r, timestamp: r.created_at, lat: parseFloat(r.lat), lng: parseFloat(r.lng) }));
         return sendSuccess(data);
       } else {
         return sendSuccess([]); 
