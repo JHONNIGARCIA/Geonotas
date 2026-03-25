@@ -24,14 +24,9 @@ export default async function handler(req, res) {
     password: pass,
     database: name,
     port,
-    ssl: {
-      minVersion: 'TLSv1.2',
-      rejectUnauthorized: true,
-      servername: host // CLAVE PARA RESOLVER EL ERROR DE TiDB SERVERLESS 1105 (SNI)
-    }
+    ssl: { rejectUnauthorized: true }
   };
 
-  
   let connection;
   try {
     if (host === 'localhost') {
@@ -40,14 +35,8 @@ export default async function handler(req, res) {
        connection = await mysql.createConnection(dbConfig);
     }
   } catch (err) {
-    const attemptedVars = { 
-      host: host, hostLen: host.length, 
-      user: user, userLen: user.length, 
-      port: port, 
-      hasPass: !!pass, passLen: pass ? pass.length : 0
-    };
-    console.error("CRITICAL DB CONNECTION ERROR:", err, "ATTEMPTED:", attemptedVars);
-    return res.status(500).json({ status: 'error', message: 'Fallo de BD persistente', vars: attemptedVars, debug: err.message });
+    console.error("CRITICAL DB CONNECTION ERROR:", err);
+    return res.status(500).json({ status: 'error', message: 'Fallo de BD', debug: err.message });
   }
 
   const sendError = (message, details) => {
@@ -62,7 +51,24 @@ export default async function handler(req, res) {
   const action = req.query.action || (req.body && req.body.action) || '';
 
   try {
-    if (action === 'save') {
+    if (action === 'setup') {
+      // Auto-crear la tabla en Aiven sin necesidad de usar un programa externo
+      await connection.execute(`
+        CREATE TABLE IF NOT EXISTS notas (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          lat DECIMAL(10, 8) NOT NULL,
+          lng DECIMAL(11, 8) NOT NULL,
+          type ENUM('General', 'Trabajo', 'Personal', 'Escuela', 'Idea') NOT NULL,
+          text TEXT NOT NULL,
+          image LONGTEXT DEFAULT NULL,
+          visibilidad ENUM('publico', 'privado') DEFAULT 'publico',
+          share_code VARCHAR(10) DEFAULT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      return sendSuccess({ status: 'ok', message: 'Tabla notas creada en Aiven correctamente' });
+      
+    } else if (action === 'save') {
       const dataSrc = req.method === 'POST' ? req.body : req.query;
       const { lat, lng, type, text, image, visibilidad } = dataSrc;
       const finalVisibilidad = visibilidad || 'publico';
@@ -85,7 +91,6 @@ export default async function handler(req, res) {
 
     } else if (action === 'list') {
       const [rows] = await connection.execute('SELECT * FROM notas WHERE visibilidad = "publico" ORDER BY created_at DESC');
-      // Asegurarse de que lat y lng son números
       const data = rows.map(r => ({ ...r, lat: parseFloat(r.lat), lng: parseFloat(r.lng) }));
       return sendSuccess(data);
 
@@ -120,3 +125,4 @@ export default async function handler(req, res) {
     return sendError('Database error', err);
   }
 }
+
