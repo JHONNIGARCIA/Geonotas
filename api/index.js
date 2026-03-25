@@ -13,26 +13,29 @@ export default async function handler(req, res) {
   }
 
   // TiDB Cloud / MySQL Connection
-  const dbConfig = {
-    host: process.env.DB_HOST ? process.env.DB_HOST.trim() : 'localhost',
-    user: process.env.DB_USER ? process.env.DB_USER.trim() : 'root',
-    password: process.env.DB_PASS ? process.env.DB_PASS.trim() : '',
-    database: process.env.DB_NAME ? process.env.DB_NAME.trim() : 'geonotes_db',
-    port: parseInt(process.env.DB_PORT ? process.env.DB_PORT.trim() : '4000', 10),
-    ssl: { minVersion: 'TLSv1.2', rejectUnauthorized: true }
-  };
+  const host = process.env.DB_HOST ? process.env.DB_HOST.trim() : 'localhost';
+  const user = process.env.DB_USER ? process.env.DB_USER.trim() : 'root';
+  const pass = process.env.DB_PASS ? process.env.DB_PASS.trim() : '';
+  const name = process.env.DB_NAME ? process.env.DB_NAME.trim() : 'geonotes_db';
+  const port = process.env.DB_PORT ? process.env.DB_PORT.trim() : '4000';
   
-  if (dbConfig.host === 'localhost') {
-    delete dbConfig.ssl;
-  }
+  const encodedUser = encodeURIComponent(user);
+  const encodedPass = encodeURIComponent(pass);
 
+  const dbConfig = `mysql://${encodedUser}:${encodedPass}@${host}:${port}/${name}?ssl={"rejectUnauthorized":true}`;
+
+  
   let connection;
   try {
-    connection = await mysql.createConnection(dbConfig);
+    if (host === 'localhost') {
+       connection = await mysql.createConnection({ host, user, password: pass, database: name, port });
+    } else {
+       connection = await mysql.createConnection(dbConfig);
+    }
   } catch (err) {
-    const attemptedVars = { host: dbConfig.host, user: dbConfig.user, port: dbConfig.port, hasPass: !!dbConfig.password };
+    const attemptedVars = { host, user, port, hasPass: !!pass, configStr: dbConfig.replace(encodedPass, '***') };
     console.error("CRITICAL DB CONNECTION ERROR:", err, "ATTEMPTED:", attemptedVars);
-    return res.status(500).json({ status: 'error', message: 'Fallo de BD', vars: attemptedVars, debug: err.message });
+    return res.status(500).json({ status: 'error', message: 'Fallo de BD por prefix URI', vars: attemptedVars, debug: err.message });
   }
 
   const sendError = (message, details) => {
