@@ -32,37 +32,42 @@ try {
         PDO::ATTR_TIMEOUT            => 5,
     ];
 
-    // Configuración SSL para TiDB Cloud (Obligatorio en Public Endpoints)
+    // Configuración SSL para TiDB Cloud (Solo si no es localhost)
     if ($DB_HOST !== 'localhost') {
-        $options[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = false;
+        // Usar constantes numéricas por si el driver no está cargado o las constantes no están definidas
+        // 1007 = PDO::MYSQL_ATTR_SSL_CA, 1014 = PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT
+        $options[1014] = false; 
         
-        // Intentar detectar el cert en el sistema o usar 'true'
         $caPaths = [
             '/etc/pki/tls/certs/ca-bundle.crt',
             '/etc/ssl/certs/ca-certificates.crt',
-            '/usr/local/etc/openssl/cert.pem'
+            '/etc/ssl/cert.pem'
         ];
-        $found = false;
         foreach($caPaths as $path) {
             if (file_exists($path)) {
-                $options[PDO::MYSQL_ATTR_SSL_CA] = $path;
-                $found = true;
+                $options[1007] = $path;
                 break;
             }
         }
-        if (!$found) $options[PDO::MYSQL_ATTR_SSL_CA] = true;
+        if (!isset($options[1007])) {
+            $options[1007] = true;
+        }
     }
 
     $dsn = "mysql:host=$DB_HOST;port=$DB_PORT;dbname=$DB_NAME;charset=utf8mb4";
     $pdo = new PDO($dsn, $DB_USER, $DB_PASS, $options);
-} catch (PDOException $e) {
-    header('HTTP/1.1 500 Internal Server Error');
+} catch (Exception $e) {
     header('Content-Type: application/json');
+    http_response_code(500);
     die(json_encode([
         'status' => 'error',
-        'message' => 'Error Crítico: No se pudo conectar a la base de datos de TiDB Cloud',
-        'error_detail' => $e->getMessage(),
-        'config' => ['host' => $DB_HOST, 'port' => $DB_PORT, 'user' => $DB_USER, 'dbname' => $DB_NAME]
+        'message' => 'Error de conexión',
+        'debug' => $e->getMessage(),
+        'env_check' => [
+            'host' => $DB_HOST,
+            'port' => $DB_PORT,
+            'user' => $DB_USER
+        ]
     ]));
 }
 
