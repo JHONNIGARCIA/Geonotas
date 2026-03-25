@@ -30,7 +30,8 @@ export default async function handler(req, res) {
   try {
     connection = await mysql.createConnection(dbConfig);
   } catch (err) {
-    return res.status(500).json({ status: 'error', message: 'Error de conexión a la base de datos', debug: err.message });
+    console.error("CRITICAL DB CONNECTION ERROR:", err);
+    return res.status(500).json({ status: 'error', message: 'Error de conexión a la base de datos', debug: err.message, stack: err.stack });
   }
 
   const sendError = (message, details) => {
@@ -99,6 +100,7 @@ export default async function handler(req, res) {
       return sendError(`Invalid action: ${action}`);
     }
   } catch (err) {
+    console.error("DATABASE QUERY ERROR:", err);
     return sendError('Database error', err);
   }
 }
