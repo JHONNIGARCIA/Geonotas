@@ -15,27 +15,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 // ── Configuración de la base de datos ─────────────────────────────────
-$DB_HOST = 'localhost';
-$DB_USER = 'root';
-$DB_PASS = '';
-$DB_NAME = 'geonotes_db';
-
+// ── Configuración de la base de datos (Entorno Cloud) ───────────────────
+$DB_HOST = getenv('DB_HOST') ?: 'localhost';
+$DB_USER = getenv('DB_USER') ?: 'root';
+$DB_PASS = getenv('DB_PASS') ?: '';
+$DB_NAME = getenv('DB_NAME') ?: 'geonotes_db';
+$DB_PORT = getenv('DB_PORT') ?: '3306';
 
 // ── Conexión ──────────────────────────────────────────────────────────
 try {
+    $options = [
+        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_EMULATE_PREPARES   => false,
+    ];
+
+    // Si es TiDB Cloud o similar en producción, forzamos SSL
+    if ($DB_HOST !== 'localhost') {
+        $options[PDO::MYSQL_ATTR_SSL_CA] = true; 
+        $options[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = false;
+    }
+
     $pdo = new PDO(
-        "mysql:host={$DB_HOST};dbname={$DB_NAME};charset=utf8mb4",
+        "mysql:host={$DB_HOST};port={$DB_PORT};dbname={$DB_NAME};charset=utf8mb4",
         $DB_USER,
         $DB_PASS,
-        [
-            PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES   => false,
-        ]
+        $options
     );
 } catch (PDOException $e) {
     http_response_code(500);
-    echo json_encode(['error' => 'Error de conexión: ' . $e->getMessage()]);
+    echo json_encode(['error' => 'Error de conexión: ' . $e->getMessage(), 'host' => $DB_HOST]);
     exit;
 }
 
