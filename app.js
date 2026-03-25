@@ -1,7 +1,7 @@
 // ══════════════════════════════════════════════════════════════════════
 //  GeoNotes PWA — Application Logic
 // ══════════════════════════════════════════════════════════════════════
-const API_URL = 'api/index.php';
+const API_URL = 'api/main.php';
 const STORAGE_KEY = 'geonotes_data';
 const PENDING_KEY = 'geonotes_pending';
 
