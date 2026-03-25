@@ -16,11 +16,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 // ── Configuración de la base de datos ─────────────────────────────────
 // ── Configuración de la base de datos (Entorno Cloud) ───────────────────
-$DB_HOST = getenv('DB_HOST') ?: 'localhost';
-$DB_USER = getenv('DB_USER') ?: 'root';
-$DB_PASS = getenv('DB_PASS') ?: '';
-$DB_NAME = getenv('DB_NAME') ?: 'geonotes_db';
-$DB_PORT = getenv('DB_PORT') ?: '3306';
+// ── Configuración de la base de datos (Entorno Cloud) ───────────────────
+$DB_HOST = trim(getenv('DB_HOST') ?: 'localhost');
+$DB_USER = trim(getenv('DB_USER') ?: 'root');
+$DB_PASS = trim(getenv('DB_PASS') ?: '');
+$DB_NAME = trim(getenv('DB_NAME') ?: 'geonotes_db');
+$DB_PORT = trim(getenv('DB_PORT') ?: '3306');
 
 // ── Conexión ──────────────────────────────────────────────────────────
 try {
@@ -31,29 +32,37 @@ try {
         PDO::ATTR_TIMEOUT            => 5,
     ];
 
-    // Configuración SSL para TiDB Cloud
-    if ($DB_HOST !== 'localhost' && strpos($DB_HOST, 'tidbcloud.com') !== false) {
+    // Configuración SSL para TiDB Cloud (Obligatorio en Public Endpoints)
+    if ($DB_HOST !== 'localhost') {
         $options[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = false;
-        // En Vercel, a veces 'true' en SSL_CA causa problemas si no hay cert, 
-        // pero TiDB requiere que el cliente inicie SSL.
-        $options[PDO::MYSQL_ATTR_SSL_CA] = NULL; 
+        
+        // Intentar detectar el cert en el sistema o usar 'true'
+        $caPaths = [
+            '/etc/pki/tls/certs/ca-bundle.crt',
+            '/etc/ssl/certs/ca-certificates.crt',
+            '/usr/local/etc/openssl/cert.pem'
+        ];
+        $found = false;
+        foreach($caPaths as $path) {
+            if (file_exists($path)) {
+                $options[PDO::MYSQL_ATTR_SSL_CA] = $path;
+                $found = true;
+                break;
+            }
+        }
+        if (!$found) $options[PDO::MYSQL_ATTR_SSL_CA] = true;
     }
 
-    $pdo = new PDO(
-        "mysql:host=$DB_HOST;port=$DB_PORT;dbname=$DB_NAME;charset=utf8mb4",
-        $DB_USER,
-        $DB_PASS,
-        $options
-    );
+    $dsn = "mysql:host=$DB_HOST;port=$DB_PORT;dbname=$DB_NAME;charset=utf8mb4";
+    $pdo = new PDO($dsn, $DB_USER, $DB_PASS, $options);
 } catch (PDOException $e) {
-    http_response_code(500);
+    header('HTTP/1.1 500 Internal Server Error');
     header('Content-Type: application/json');
     die(json_encode([
         'status' => 'error',
-        'message' => 'Error de conexión a la base de datos',
-        'debug' => $e->getMessage(),
-        'host' => $DB_HOST,
-        'port' => $DB_PORT
+        'message' => 'Error Crítico: No se pudo conectar a la base de datos de TiDB Cloud',
+        'error_detail' => $e->getMessage(),
+        'config' => ['host' => $DB_HOST, 'port' => $DB_PORT, 'user' => $DB_USER, 'dbname' => $DB_NAME]
     ]));
 }
 
