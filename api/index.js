@@ -84,7 +84,15 @@ export default async function handler(req, res) {
 
       await connection.execute(
         'INSERT INTO notas (lat, lng, type, text, image, visibilidad, share_code) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [lat ?? null, lng ?? null, type ?? null, text ?? '', image ?? null, finalVisibilidad ?? 'publico', shareCode ?? null]
+        [
+          lat != null ? lat : 0, 
+          lng != null ? lng : 0, 
+          type || 'General', 
+          text || '', 
+          image || null, 
+          finalVisibilidad || 'publico', 
+          shareCode || null
+        ]
       );
 
       return sendSuccess({ status: 'ok', share_code: shareCode });
