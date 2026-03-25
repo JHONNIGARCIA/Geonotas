@@ -84,13 +84,13 @@ export default async function handler(req, res) {
 
       await connection.execute(
         'INSERT INTO notas (lat, lng, type, text, image, visibilidad, share_code) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [lat, lng, type, text, image || null, finalVisibilidad, shareCode]
+        [lat ?? null, lng ?? null, type ?? null, text ?? '', image ?? null, finalVisibilidad ?? 'publico', shareCode ?? null]
       );
 
       return sendSuccess({ status: 'ok', share_code: shareCode });
 
     } else if (action === 'list') {
-      const [rows] = await connection.execute('SELECT * FROM notas WHERE visibilidad = "publico" ORDER BY created_at DESC');
+      const [rows] = await connection.execute("SELECT * FROM notas WHERE visibilidad = 'publico' ORDER BY created_at DESC");
       const data = rows.map(r => ({ ...r, lat: parseFloat(r.lat), lng: parseFloat(r.lng) }));
       return sendSuccess(data);
 
