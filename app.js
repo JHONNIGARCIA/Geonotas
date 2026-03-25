@@ -1,7 +1,7 @@
 // ══════════════════════════════════════════════════════════════════════
 //  GeoNotes PWA — Application Logic
 // ══════════════════════════════════════════════════════════════════════
-const API_URL = 'api/index.php';
+const API_URL = 'api/index.js';
 const STORAGE_KEY = 'geonotes_data';
 const PENDING_KEY = 'geonotes_pending';
 
@@ -710,7 +710,7 @@ async function accessPrivateNote() {
     if (!code) { showToast('Ingresa un código.', 'warn'); return; }
 
     try {
-        const response = await fetch(`api.php?action=get_by_code&code=${code}`);
+        const response = await fetch(`${API_URL}?action=get_by_code&code=${code}`);
         if (!response.ok) {
             if (response.status === 404) throw new Error('Código no válido o nota inexistente.');
             throw new Error('Error al buscar la nota.');
