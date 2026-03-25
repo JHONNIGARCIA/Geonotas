@@ -40,9 +40,14 @@ export default async function handler(req, res) {
        connection = await mysql.createConnection(dbConfig);
     }
   } catch (err) {
-    const attemptedVars = { host, user, port, hasPass: !!pass, configStr: dbConfig.replace(encodedPass, '***') };
+    const attemptedVars = { 
+      host: host, hostLen: host.length, 
+      user: user, userLen: user.length, 
+      port: port, 
+      hasPass: !!pass, passLen: pass ? pass.length : 0
+    };
     console.error("CRITICAL DB CONNECTION ERROR:", err, "ATTEMPTED:", attemptedVars);
-    return res.status(500).json({ status: 'error', message: 'Fallo de BD por prefix URI', vars: attemptedVars, debug: err.message });
+    return res.status(500).json({ status: 'error', message: 'Fallo de BD persistente', vars: attemptedVars, debug: err.message });
   }
 
   const sendError = (message, details) => {
