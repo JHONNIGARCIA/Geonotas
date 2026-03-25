@@ -28,24 +28,33 @@ try {
         PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         PDO::ATTR_EMULATE_PREPARES   => false,
+        PDO::ATTR_TIMEOUT            => 5,
     ];
 
-    // Si es TiDB Cloud o similar en producción, forzamos SSL
-    if ($DB_HOST !== 'localhost') {
-        $options[PDO::MYSQL_ATTR_SSL_CA] = true; 
+    // Configuración SSL para TiDB Cloud
+    if ($DB_HOST !== 'localhost' && strpos($DB_HOST, 'tidbcloud.com') !== false) {
         $options[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = false;
+        // En Vercel, a veces 'true' en SSL_CA causa problemas si no hay cert, 
+        // pero TiDB requiere que el cliente inicie SSL.
+        $options[PDO::MYSQL_ATTR_SSL_CA] = NULL; 
     }
 
     $pdo = new PDO(
-        "mysql:host={$DB_HOST};port={$DB_PORT};dbname={$DB_NAME};charset=utf8mb4",
+        "mysql:host=$DB_HOST;port=$DB_PORT;dbname=$DB_NAME;charset=utf8mb4",
         $DB_USER,
         $DB_PASS,
         $options
     );
 } catch (PDOException $e) {
     http_response_code(500);
-    echo json_encode(['error' => 'Error de conexión: ' . $e->getMessage(), 'host' => $DB_HOST]);
-    exit;
+    header('Content-Type: application/json');
+    die(json_encode([
+        'status' => 'error',
+        'message' => 'Error de conexión a la base de datos',
+        'debug' => $e->getMessage(),
+        'host' => $DB_HOST,
+        'port' => $DB_PORT
+    ]));
 }
 
 // ── Auto-migrate: add categoria column if missing ─────────────────────
