@@ -85,8 +85,8 @@ export default async function handler(req, res) {
       const [insertResult] = await connection.execute(
         'INSERT INTO notas (lat, lng, type, text, image, visibilidad, share_code) VALUES (?, ?, ?, ?, ?, ?, ?)',
         [
-          lat != null ? lat : 0, 
-          lng != null ? lng : 0, 
+          lat != null ? lat : null, 
+          lng != null ? lng : null, 
           type || 'General', 
           text || '', 
           image || null, 
@@ -101,12 +101,11 @@ export default async function handler(req, res) {
         const formattedNote = { 
           ...newNote, 
           timestamp: newNote.created_at, 
-          lat: parseFloat(newNote.lat), 
-          lng: parseFloat(newNote.lng) 
+          lat: newNote.lat != null ? parseFloat(newNote.lat) : null, 
+          lng: newNote.lng != null ? parseFloat(newNote.lng) : null 
         };
         return sendSuccess({ status: 'ok', ...formattedNote });
       }
-
       return sendSuccess({ status: 'ok', share_code: shareCode });
 
     } else if (action === 'list') {
