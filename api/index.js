@@ -124,6 +124,20 @@ export default async function handler(req, res) {
       await connection.execute('DELETE FROM notas');
       return sendSuccess({ status: 'ok' });
 
+    } else if (action === 'delete') {
+      const id = req.query.id || req.body?.id;
+      if (!id) return sendError('ID no proporcionado');
+      await connection.execute('DELETE FROM notas WHERE id = ?', [id]);
+      return sendSuccess({ status: 'ok' });
+
+    } else if (action === 'update') {
+      const id = req.query.id || req.body?.id;
+      const dataSrc = req.method === 'POST' ? req.body : req.query;
+      const { text } = dataSrc;
+      if (!id || !text) return sendError('Datos incompletos para actualizar');
+      await connection.execute('UPDATE notas SET text = ? WHERE id = ?', [text, id]);
+      return sendSuccess({ status: 'ok' });
+
     } else if (action === 'get_by_code') {
       const code = req.query.code || req.body?.code;
       if (!code) {
@@ -132,9 +146,11 @@ export default async function handler(req, res) {
       const [rows] = await connection.execute('SELECT * FROM notas WHERE share_code = ? LIMIT 1', [code]);
       if (rows.length > 0) {
         const data = rows.map(r => ({ ...r, timestamp: r.created_at, lat: parseFloat(r.lat), lng: parseFloat(r.lng) }));
-        return sendSuccess(data);
+        // Devolver un solo objeto (data[0]) en lugar del arreglo entero
+        return sendSuccess(data[0]); 
       } else {
-        return sendSuccess([]); 
+        connection.end();
+        return res.status(404).json({ status: 'error', message: 'Código no válido o nota inexistente' }); 
       }
 
     } else {
