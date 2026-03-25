@@ -1,6 +1,6 @@
 // ─── GeoNotes PWA — Service Worker (Stale-While-Revalidate) ───────────────────────────
 
-const CACHE_NAME = 'geonotes-v8';
+const CACHE_NAME = 'geonotes-v9';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -45,7 +45,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
   // API calls → always go to network (no caching for dynamic data)
-  if (url.pathname.endsWith('api.php')) {
+  if (url.pathname.includes('/api/')) {
     event.respondWith(
       fetch(event.request).catch(() => {
         return new Response(
