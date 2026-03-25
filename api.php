@@ -15,10 +15,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 // ── Configuración de la base de datos ─────────────────────────────────
-$DB_HOST = 'sql208.infinityfree.com';
-$DB_USER = 'if0_41376911';
-$DB_PASS = 'v5wZTGAy0J';  // ← Pon aquí tu contraseña de la BD
-$DB_NAME = 'if0_41376911_geonotes_db';
+$DB_HOST = 'localhost';
+$DB_USER = 'root';
+$DB_PASS = '';
+$DB_NAME = 'geonotes_db';
 
 
 // ── Conexión ──────────────────────────────────────────────────────────
@@ -55,6 +55,23 @@ try {
     }
 } catch (Exception $e) { /* table might not exist yet */ }
 
+// ── Auto-migrate: add visibilidad column if missing ──────────────────
+try {
+    $cols = $pdo->query("SHOW COLUMNS FROM notas LIKE 'visibilidad'")->fetchAll();
+    if (count($cols) === 0) {
+        $pdo->exec("ALTER TABLE notas ADD COLUMN visibilidad ENUM('publico', 'privado') DEFAULT 'publico'");
+    }
+} catch (Exception $e) { }
+
+// ── Auto-migrate: add share_code column if missing ───────────────────
+try {
+    $cols = $pdo->query("SHOW COLUMNS FROM notas LIKE 'share_code'")->fetchAll();
+    if (count($cols) === 0) {
+        $pdo->exec("ALTER TABLE notas ADD COLUMN share_code VARCHAR(10) DEFAULT NULL");
+        $pdo->exec("CREATE INDEX idx_share_code ON notas(share_code)");
+    }
+} catch (Exception $e) { }
+
 // ── Router ────────────────────────────────────────────────────────────
 $action = $_GET['action'] ?? '';
 
@@ -62,7 +79,8 @@ switch ($action) {
 
     // ── Listar todas las notas ────────────────────────────────────────
     case 'list':
-        $stmt = $pdo->query('SELECT * FROM notas ORDER BY fecha DESC');
+        // Only return public notes by default
+        $stmt = $pdo->query("SELECT * FROM notas WHERE visibilidad = 'publico' ORDER BY fecha DESC");
         $notas = $stmt->fetchAll();
 
         $result = array_map(function ($row) {
@@ -73,6 +91,8 @@ switch ($action) {
                 'lat'       => $row['latitud'] !== null ? (float) $row['latitud'] : null,
                 'lng'       => $row['longitud'] !== null ? (float) $row['longitud'] : null,
                 'categoria' => $row['categoria'] ?? 'general',
+                'visibilidad' => $row['visibilidad'] ?? 'publico',
+                'share_code' => $row['share_code'] ?? null,
                 'timestamp' => strtotime($row['fecha']) * 1000,
             ];
         }, $notas);
@@ -96,15 +116,23 @@ switch ($action) {
             exit;
         }
 
+        $visibilidad = $input['visibilidad'] ?? 'publico';
+        $share_code = null;
+        if ($visibilidad === 'privado') {
+            $share_code = 'GN-' . strtoupper(substr(md5(uniqid(mt_rand(), true)), 0, 6));
+        }
+
         $stmt = $pdo->prepare(
-            'INSERT INTO notas (nombre, texto, latitud, longitud, categoria) VALUES (:nombre, :texto, :lat, :lng, :cat)'
+            'INSERT INTO notas (nombre, texto, latitud, longitud, categoria, visibilidad, share_code) VALUES (:nombre, :texto, :lat, :lng, :cat, :vis, :code)'
         );
         $stmt->execute([
             ':nombre' => $input['nombre'] ?? null,
-            ':texto' => $input['text'],
-            ':lat'   => $input['lat'] ?? null,
-            ':lng'   => $input['lng'] ?? null,
-            ':cat'   => $input['categoria'] ?? 'general',
+            ':texto'  => $input['text'],
+            ':lat'    => $input['lat'] ?? null,
+            ':lng'    => $input['lng'] ?? null,
+            ':cat'    => $input['categoria'] ?? 'general',
+            ':vis'    => $visibilidad,
+            ':code'   => $share_code,
         ]);
 
         $id = (int) $pdo->lastInsertId();
@@ -119,6 +147,8 @@ switch ($action) {
             'lat'       => $row['latitud'] !== null ? (float) $row['latitud'] : null,
             'lng'       => $row['longitud'] !== null ? (float) $row['longitud'] : null,
             'categoria' => $row['categoria'] ?? 'general',
+            'visibilidad' => $row['visibilidad'] ?? 'publico',
+            'share_code' => $row['share_code'] ?? null,
             'timestamp' => strtotime($row['fecha']) * 1000,
         ]);
         break;
@@ -175,9 +205,41 @@ switch ($action) {
     // ── Estadísticas por día ──────────────────────────────────────────
     case 'stats':
         $stmt = $pdo->query(
-            "SELECT DATE(fecha) as dia, COUNT(*) as total FROM notas GROUP BY DATE(fecha) ORDER BY dia DESC LIMIT 7"
+            "SELECT DATE(fecha) as dia, COUNT(*) as total FROM notas WHERE visibilidad = 'publico' GROUP BY DATE(fecha) ORDER BY dia DESC LIMIT 7"
         );
         echo json_encode($stmt->fetchAll());
+        break;
+
+    // ── Obtener una nota por su código compartido ─────────────────────
+    case 'get_by_code':
+        $code = $_GET['code'] ?? '';
+        if (empty($code)) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Código no proporcionado.']);
+            exit;
+        }
+
+        $stmt = $pdo->prepare('SELECT * FROM notas WHERE share_code = :code LIMIT 1');
+        $stmt->execute([':code' => $code]);
+        $row = $stmt->fetch();
+
+        if (!$row) {
+            http_response_code(404);
+            echo json_encode(['error' => 'Nota no encontrada o código inválido.']);
+            exit;
+        }
+
+        echo json_encode([
+            'id'        => (int) $row['id'],
+            'nombre'    => $row['nombre'] ?? null,
+            'text'      => $row['texto'],
+            'lat'       => $row['latitud'] !== null ? (float) $row['latitud'] : null,
+            'lng'       => $row['longitud'] !== null ? (float) $row['longitud'] : null,
+            'categoria' => $row['categoria'] ?? 'general',
+            'visibilidad' => $row['visibilidad'],
+            'share_code' => $row['share_code'],
+            'timestamp' => strtotime($row['fecha']) * 1000,
+        ]);
         break;
 
     // ── Eliminar todas las notas ──────────────────────────────────────

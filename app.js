@@ -31,6 +31,7 @@ let currentPhoto = null;
 let editingNote = null;
 let deferredPrompt = null;
 let statsChart = null;
+let selectedVisibility = 'publico';
 
 const CAT_COLORS = {
     general: { bg: 'rgba(99,102,241,.15)', color: '#818cf8', label: '📌 General' },
@@ -84,6 +85,22 @@ function filterByCat(cat) {
     filterNotes();
 }
 
+// ── VISIBILITY SELECTOR ───────────────────────────────────────────
+function selectVisibility(vis) {
+    selectedVisibility = vis;
+    const isPub = vis === 'publico';
+    const bPub = document.getElementById('btnPub');
+    const bPriv = document.getElementById('btnPriv');
+
+    bPub.className = isPub 
+        ? 'flex-1 flex items-center justify-center gap-2 rounded-xl bg-indigo-500/10 px-3 py-2 text-xs font-medium text-indigo-400 ring-1 ring-indigo-500/30 transition hover:bg-indigo-500/20 active:scale-95 ring-2'
+        : 'flex-1 flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-medium text-slate-400 ring-1 ring-slate-700 transition hover:bg-slate-700 active:scale-95';
+
+    bPriv.className = !isPub 
+        ? 'flex-1 flex items-center justify-center gap-2 rounded-xl bg-indigo-500/10 px-3 py-2 text-xs font-medium text-indigo-400 ring-1 ring-indigo-500/30 transition hover:bg-indigo-500/20 active:scale-95 ring-2'
+        : 'flex-1 flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-medium text-slate-400 ring-1 ring-slate-700 transition hover:bg-slate-700 active:scale-95';
+}
+
 // ── PHOTO CAPTURE ─────────────────────────────────────────────────
 function handlePhoto(input) {
     const file = input.files[0];
@@ -115,10 +132,25 @@ function removePhoto() {
 }
 
 // ── LOAD NOTES ────────────────────────────────────────────────────
+// ── MERGE LOCAL & SERVER ──────────────────────────────────────────
+function mergeNotes(serverNotes) {
+    const localNotes = getLocalNotes();
+    const myPrivateNotes = localNotes.filter(n => n.visibilidad === 'privado');
+    const merged = [...serverNotes];
+    myPrivateNotes.forEach(pn => {
+        if (!merged.find(m => (m.id && m.id === pn.id) || m.timestamp === pn.timestamp)) {
+            merged.push(pn);
+        }
+    });
+    merged.sort((a,b) => (b.timestamp || b.id) - (a.timestamp || a.id));
+    return merged;
+}
+
 async function loadNotes() {
     if (navigator.onLine) {
         try {
-            allNotes = await apiGet('list');
+            const serverNotes = await apiGet('list');
+            allNotes = mergeNotes(serverNotes);
             setLocalNotes(allNotes);
         } catch (e) {
             console.warn('[App] API unavailable:', e);
@@ -136,6 +168,20 @@ function filterNotes() {
     const q = searchInput.value.toLowerCase().trim();
     if (q) notes = notes.filter(n => n.text.toLowerCase().includes(q));
     if (filterCat !== 'all') notes = notes.filter(n => (n.categoria || 'general') === filterCat);
+    
+    // In many-to-one local state, we might have our own private notes in localStorage
+    // Merge them if they are not already in the list
+    if (navigator.onLine) {
+        const local = getLocalNotes();
+        local.forEach(ln => {
+            if (ln.visibilidad === 'privado' && !notes.find(n => n.id === ln.id || n.timestamp === ln.timestamp)) {
+                notes.unshift(ln);
+            }
+        });
+        // Sort again
+        notes.sort((a,b) => (b.id || b.timestamp) - (a.id || a.timestamp));
+    }
+
     renderNotes(notes);
 }
 
@@ -157,22 +203,36 @@ function renderNotes(notes) {
         const timeStr = date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
 
         const isSynced = note.id != null;
+        const isPrivate = note.visibilidad === 'privado';
+        
         const syncBadge = isSynced
-            ? '<span class="sync-badge synced">✓ MySQL</span>'
+            ? `<span class="sync-badge synced">✓ MySQL</span>`
             : '<span class="sync-badge local">⏳ Local</span>';
+        
+        const visBadge = isPrivate
+            ? `<span class="sync-badge local" style="background:rgba(139,92,246,.15);color:#a78bfa" title="Solo accesible con código">🔒 Privada ${note.share_code ? `[${note.share_code}]` : ''}</span>`
+            : '';
+
         const cat = note.categoria || 'general';
         const catInfo = CAT_COLORS[cat] || CAT_COLORS.general;
-        const safeText = JSON.stringify(note.text);
+        const shareMsg = isPrivate && note.share_code 
+            ? `Nota Privada GeoNotes: "${note.text}" (Ubicación: ${note.lat ? `${note.lat.toFixed(4)}, ${note.lng.toFixed(4)}` : 'Sin ubicación'}). Usa el código [ ${note.share_code} ] para verla.`
+            : `Nota GeoNotes: "${note.text}" ${note.lat ? `(Google Maps: https://www.google.com/maps?q=${note.lat},${note.lng})` : ''}`;
+        const safeMsg = shareMsg.replace(/'/g, "\\'").replace(/"/g, '&quot;');
 
         card.innerHTML = `
       ${note.photo ? `<img src="${note.photo}" class="w-full h-32 object-cover rounded-xl mb-3" alt="Foto"/>` : ''}
       <div class="mb-3 flex items-start justify-between gap-2">
         <div class="flex-1">
-          ${note.nombre ? `<p class="text-xs font-semibold text-indigo-400 mb-1">👤 ${escapeHTML(note.nombre)}</p>` : ''}
+          <div class="flex items-center gap-2 mb-1">
+            ${note.nombre ? `<p class="text-xs font-semibold text-indigo-400">👤 ${escapeHTML(note.nombre)}</p>` : ''}
+            ${visBadge}
+          </div>
           <p class="text-sm leading-relaxed text-slate-200 whitespace-pre-wrap break-words">${escapeHTML(note.text)}</p>
+          ${isPrivate && note.share_code ? `<p class="mt-2 text-[10px] font-mono text-indigo-300 bg-indigo-500/10 px-2 py-1 rounded inline-block">Código amigo: ${note.share_code}</p>` : ''}
         </div>
         <div class="flex shrink-0 gap-1">
-          <button onclick="event.stopPropagation();shareNote(${safeText.replace(/"/g, '&quot;')})" class="rounded-lg p-1.5 text-slate-500 transition hover:bg-indigo-500/15 hover:text-indigo-400" title="Compartir">
+          <button onclick="event.stopPropagation();shareNote('${safeMsg}')" class="rounded-lg p-1.5 text-slate-500 transition hover:bg-indigo-500/15 hover:text-indigo-400" title="Compartir">
             <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
           </button>
           <button onclick="event.stopPropagation();openEditModal(${isSynced ? note.id : -1},'${note.timestamp}')" class="rounded-lg p-1.5 text-slate-500 transition hover:bg-amber-500/15 hover:text-amber-400" title="Editar">
@@ -217,12 +277,16 @@ function saveNote() {
 }
 
 async function commitNote(text, nombre, lat, lng) {
-    const noteData = { text, nombre, lat, lng, categoria: selectedCat, photo: currentPhoto || null };
+    const noteData = { text, nombre, lat, lng, categoria: selectedCat, photo: currentPhoto || null, visibilidad: selectedVisibility };
 
     if (navigator.onLine) {
         try {
-            await apiPost('save', noteData);
-            showToast('¡Nota guardada en MySQL!', 'success');
+            const result = await apiPost('save', noteData);
+            // Save our own notes to localStorage so we see them even if they are private
+            const notes = getLocalNotes();
+            notes.unshift(result);
+            setLocalNotes(notes);
+            showToast(result.visibilidad === 'privado' ? '¡Nota privada guardada! Usa el código para compartir.' : '¡Nota guardada en MySQL!', 'success');
         } catch {
             saveToLocalFallback(noteData);
             showToast('Guardada localmente.', 'warn');
@@ -235,6 +299,7 @@ async function commitNote(text, nombre, lat, lng) {
     noteInput.value = '';
     charCount.textContent = '0 caracteres';
     removePhoto();
+    selectVisibility('publico'); // Reset to public
     restoreSaveButton();
     sendTestNotification(text);
     await loadNotes();
@@ -416,17 +481,38 @@ let leafletMap = null;
 
 function openMapModal(note) {
     const modal = document.getElementById('mapModal');
-    document.getElementById('modalNoteText').textContent = note.text;
-    const date = new Date(note.timestamp);
-    document.getElementById('modalNoteDate').textContent = date.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' }) + ' · ' + date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    const noteText = document.getElementById('modalNoteText');
+    const noteDate = document.getElementById('modalNoteDate');
+    const modalTitle = document.getElementById('modalTitle');
+    const modalCoords = document.getElementById('modalCoords');
+    const modalPhoto = document.getElementById('modalPhoto');
 
-    const mp = document.getElementById('modalPhoto');
-    if (note.photo) { mp.src = note.photo; mp.classList.remove('hidden'); }
-    else { mp.classList.add('hidden'); }
+    modalTitle.textContent = note.nombre ? `De: ${note.nombre}` : 'Nota Guardada';
+    noteText.textContent = note.text;
+    
+    // Privacy info
+    const isPriv = note.visibilidad === 'privado';
+    const visHtml = isPriv 
+        ? `<div class="mt-3 flex items-center gap-2 rounded-lg bg-indigo-500/10 px-3 py-2 text-xs font-medium text-indigo-300 ring-1 ring-indigo-500/30">
+             <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+             Nota Privada — Código: <span class="font-mono font-bold tracking-wider">${note.share_code || 'N/A'}</span>
+           </div>`
+        : '';
+    
+    const date = new Date(note.timestamp);
+    noteDate.innerHTML = `
+        ${visHtml}
+        <div class="mt-3 flex items-center gap-2 text-[11px] text-slate-500">
+            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+            ${date.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })} · ${date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+        </div>
+    `;
+
+    if (note.photo) { modalPhoto.src = note.photo; modalPhoto.classList.remove('hidden'); }
+    else { modalPhoto.classList.add('hidden'); }
 
     if (note.lat != null && note.lng != null) {
-        document.getElementById('modalTitle').textContent = 'Ubicación de la Nota';
-        document.getElementById('modalCoords').textContent = `📍 ${note.lat.toFixed(6)}, ${note.lng.toFixed(6)}`;
+        modalCoords.textContent = `📍 ${note.lat.toFixed(6)}, ${note.lng.toFixed(6)}`;
         modal.classList.add('active');
         document.body.style.overflow = 'hidden';
 
@@ -617,6 +703,29 @@ document.addEventListener('keydown', e => {
     if (e.key === 'Escape') { closeMapModal(); closeEditModal(); }
 });
 
+// ── ACCESS PRIVATE NOTE ───────────────────────────────────────────
+async function accessPrivateNote() {
+    const input = document.getElementById('codeSearchInput');
+    const code = input.value.trim().toUpperCase();
+    if (!code) { showToast('Ingresa un código.', 'warn'); return; }
+
+    try {
+        const response = await fetch(`api.php?action=get_by_code&code=${code}`);
+        if (!response.ok) {
+            if (response.status === 404) throw new Error('Código no válido o nota inexistente.');
+            throw new Error('Error al buscar la nota.');
+        }
+        const note = await response.json();
+        
+        // Show in map modal
+        openMapModal(note);
+        input.value = '';
+        showToast('Nota encontrada.', 'success');
+    } catch (e) {
+        showToast(e.message, 'warn');
+    }
+}
+
 // ── SERVICE WORKER ────────────────────────────────────────────────
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
@@ -669,11 +778,11 @@ function startAutoReload() {
                 || (freshNotes.length > 0 && allNotes.length > 0 && freshNotes[0].id !== allNotes[0].id)
                 || (freshNotes.length > 0 && allNotes.length === 0);
             if (changed) {
-                allNotes = freshNotes;
+                allNotes = mergeNotes(freshNotes);
                 setLocalNotes(allNotes);
                 filterNotes();
                 loadStats();
-                console.log('[AutoReload] Updated notes:', freshNotes.length);
+                console.log('[AutoReload] Updated notes:', allNotes.length);
             }
         } catch (e) { console.warn('[AutoReload]', e); }
     }, 10000);
