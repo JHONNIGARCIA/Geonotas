@@ -18,8 +18,8 @@ export default async function handler(req, res) {
     user: process.env.DB_USER ? process.env.DB_USER.trim() : 'root',
     password: process.env.DB_PASS ? process.env.DB_PASS.trim() : '',
     database: process.env.DB_NAME ? process.env.DB_NAME.trim() : 'geonotes_db',
-    port: parseInt(process.env.DB_PORT ? process.env.DB_PORT.trim() : '3306'),
-    ssl: { rejectUnauthorized: true }
+    port: parseInt(process.env.DB_PORT ? process.env.DB_PORT.trim() : '4000', 10),
+    ssl: { minVersion: 'TLSv1.2', rejectUnauthorized: true }
   };
   
   if (dbConfig.host === 'localhost') {
@@ -30,8 +30,9 @@ export default async function handler(req, res) {
   try {
     connection = await mysql.createConnection(dbConfig);
   } catch (err) {
-    console.error("CRITICAL DB CONNECTION ERROR:", err);
-    return res.status(500).json({ status: 'error', message: 'Error de conexión a la base de datos', debug: err.message, stack: err.stack });
+    const attemptedVars = { host: dbConfig.host, user: dbConfig.user, port: dbConfig.port, hasPass: !!dbConfig.password };
+    console.error("CRITICAL DB CONNECTION ERROR:", err, "ATTEMPTED:", attemptedVars);
+    return res.status(500).json({ status: 'error', message: 'Fallo de BD', vars: attemptedVars, debug: err.message });
   }
 
   const sendError = (message, details) => {
